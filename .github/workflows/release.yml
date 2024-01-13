@@ -1,0 +1,80 @@
+name: Create and build release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  create-tag:
+    name: Create tag
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@master
+
+      - name: Read version
+        uses: SebRollen/toml-action@v1.0.2
+        id: read_toml
+        with:
+          file: 'Cargo.toml'
+          field: 'package.version'
+    
+      - uses: rickstaa/action-create-tag@v1
+        id: "tag_create"
+        with:
+          tag: "v${{ steps.read_toml.outputs.value }}"
+          tag_exists_error: false
+          message: "Release v${{ steps.read_toml.outputs.value }}"
+
+    outputs:
+      tag: "v${{ steps.read_toml.outputs.value }}"
+
+  main:
+    name: build
+    needs: create-tag
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-gnu
+            archive: zip
+          - target: x86_64-unknown-linux-musl
+            archive: tar.gz tar.xz
+          # - target: x86_64-apple-darwin
+          #   archive: zip
+
+    steps:
+      - uses: actions/checkout@master
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Compile
+        id: compile
+        uses: rust-build/rust-build.action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          TOOLCHAIN_VERSION: stable
+          RUSTTARGET: ${{ matrix.target }}
+          ARCHIVE_TYPES: ${{ matrix.archive }}
+          UPLOAD_MODE: none
+    
+      - name: Cleanup artifacts
+        run: for file in output/*_null_*; do sudo mv "$file" "${file/_null_/_${{needs.create-tag.outputs.tag}}_}"; done
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v1
+        env:
+          TAG_NAME: ${{ needs.create-tag.outputs.tag }}
+        with:
+          prerelease: false
+          name: "Release ${{ env.TAG_NAME }}"
+          tag_name: ${{ env.TAG_NAME }}
+          files: |
+            output/*.zip
+            output/*.tar.gz
+            output/*.tar.xz
