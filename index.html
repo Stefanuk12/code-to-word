@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Code to Word</title>
+
+    <script src="https://unpkg.com/docx@7.1.0/build/index.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/1.3.8/FileSaver.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Code to Word</h1>
+    <input type="number" id="heading_number" name="heading_number" placeholder="Heading Number: 2">
+    <br>
+    <input type="text" id="path_font" name="path_font" placeholder="Path Font: Calibri Light">
+    <br>
+    <input type="number" id="path_size" name="path_size" placeholder="Path Size: 12">
+    <br>
+    <input type="number" id="code_size" name="code_size" placeholder="Code Size: 9">
+    <br>
+    <input type="text" id="code_font" name="code_font" placeholder="Code Font: Courier New">
+    <br>
+    <textarea rows="1" cols="50" id="exts" name="exts"
+        placeholder="Extensions: rs py js ts html css scss md txt"></textarea>
+    <br>
+    <button type="button" id="start">Start</button>
+
+    <script>
+        /**
+         * Process a file
+         * @param {FileSystemDirectoryHandle} root
+         * @param {FileSystemFileHandle} path
+         * @param {number} path_size
+         * @param {number} code_size
+         * 
+         * @returns {[docx.Paragraph, docx.Table]}
+         */
+        async function process_file(root, path, heading_number, path_font, path_size, code_font, code_size) {
+            const paragraph = new docx.Paragraph({
+                heading: docx.HeadingLevel["HEADING_" + heading_number],
+                pageBreakBefore: true,
+                children: [
+                    new docx.TextRun({
+                        text: path.name,
+                        font: path_font,
+                        size: path_size * 2,
+                    }),
+                ],
+            });
+
+            const file = await path.getFile();
+            const text = await file.text();
+
+            const children = text.replace("\r", "").split("\n").map((line) => {
+                return new docx.Paragraph({
+                    alignment: docx.AlignmentType.JUSTIFIED,
+                    spacing: {
+                        after: 0,
+                        before: 0,
+                    },
+                    children: [
+                        new docx.TextRun({
+                            text: line,
+                            font: code_font,
+                            size: code_size * 2,
+                        }),
+                    ]
+                })
+            })
+
+            const table = new docx.Table({
+                rows: [
+                    new docx.TableRow({
+                        children: [
+                            new docx.TableCell({
+                                children,
+                            }),
+                        ],
+                    }),
+                ],
+            })
+
+            return [paragraph, table]
+        }
+
+        /**
+         * Scans the input directory for files.
+         * @param {FileSystemDirectoryHandle} root
+         * @param {FileSystemDirectoryHandle} input
+         * @param {string[]} file_exts
+         * @param {number} path_size
+         * @param {number} code_size
+         * @param {any[]} output
+         * 
+         * @returns {Promise<[docx.Paragraph, docx.Table]>}
+         */
+        async function scan_dir(root, input, file_exts, heading_number, path_font, path_size, code_font, code_size, output) {
+            output = output || [];
+
+            // Iterate over the entries
+            for await (const entry of input.values()) {
+                if (entry.kind == "file" && file_exts.includes(entry.name.split(".").pop())) {
+                    const [a, b] = await process_file(root, entry, heading_number, path_font, path_size, code_font, code_size);
+                    output.push(a);
+                    output.push(b);
+                } else if (entry.kind == "directory") {
+                    await scan_dir(root, entry, file_exts, heading_number, path_font, path_size, code_font, code_size, output);
+                }
+            }
+
+            return output
+        }
+
+        document.getElementById("start").addEventListener("click", async _ => {
+            /**
+             * Grab the heading number
+             * @type {number}
+             */
+            let heading_number = parseInt(document.getElementById("heading_number").value);
+            if (isNaN(heading_number)) {
+                heading_number = 2;
+                return;
+            }
+            console.log(heading_number);
+    
+            /**
+             * Grab the path size
+             * @type {number}
+             */
+            const path_size = parseInt(document.getElementById("path_size").value) || 12;
+
+            /**
+             * Grab the code size
+             * @type {number}
+             */
+            const code_size = parseInt(document.getElementById("code_size").value) || 9;
+
+            /**
+             * Grab the path font
+             * @type {string}
+             */
+            const path_font = document.getElementById("path_font").value || "Calibri Light";
+
+            /**
+             * Grab the code font
+             * @type {string}
+             */
+            const code_font = document.getElementById("code_font").value || "Courier New";
+
+            /**
+             * Grab the extensions we want to search for
+             * @type {string[]}
+             */
+            let exts = document.getElementById("exts").value.split(" ");
+            if (exts.length == 1 && exts[0] == "") {
+                exts = ["rs", "py", "js", "ts", "html", "css", "scss", "md", "txt"];
+            }
+
+            /**
+             * Grab the directory we want to search
+             * @type {FileSystemDirectoryHandle}
+             */
+            const dir = await window.showDirectoryPicker();
+
+            // Create the document
+            const doc = new docx.Document({
+                compatability: {
+                    doNotExpandShiftReturn: true,
+                },
+                sections: [{
+                    children: await scan_dir(dir, dir, exts, heading_number, path_font, path_size, code_font, code_size),
+                }]
+            })
+
+            // Save the document
+            docx.Packer.toBlob(doc).then((blob) => {
+                saveAs(blob, "code.docx");
+                console.log("Document created successfully");
+            });
+        }, true) 
+    </script>
+</body>
+
+</html>
