@@ -2,6 +2,12 @@
 
 A helper tool to export all code in a directory to a word document. Designed for A Level Computer Science students to help with their NEA technical solution write up.
 
+## Web version
+
+If you don't want to download the tool, you can use the web version [here](https://stefanuk12.github.io/code-to-word/).
+
+[Source](https://github.com/Stefanuk12/code-to-word/tree/web)
+
 ## Examples
 
 ```
